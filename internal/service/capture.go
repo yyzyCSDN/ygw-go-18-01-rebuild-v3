@@ -38,6 +38,15 @@ func (s *Service) StageChunk(handle model.CaptureHandle, index int, data []byte)
 	}
 	chunk := model.Chunk{Index: index, Digest: digest, Data: append([]byte(nil), data...)}
 	if err := s.catalog.StageChunk(handle.Operation, chunk); err != nil {
+		if err == model.ErrConflict {
+			// A duplicate index was rejected. Roll back only the reservation for
+			// this rejected chunk, keeping the original block and the remaining
+			// reservations intact. Forgetting the whole operation would discard
+			// already-staged chunks and surviving reservations, which later
+			// surfaces as a not-found on commit.
+			s.catalog.ReleaseDigestIfUnused(handle.Operation, digest)
+			return err
+		}
 		s.catalog.ForgetOperation(handle.Operation)
 		return err
 	}

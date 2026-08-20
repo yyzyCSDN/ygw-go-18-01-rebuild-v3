@@ -46,8 +46,11 @@ func (s *Store) StageChunk(operation string, chunk model.Chunk) error {
 		return model.ErrCapacity
 	}
 	if existing, exists := chunks[chunk.Index]; exists && existing.Digest != chunk.Digest {
+		// A duplicate index with a different payload is rejected. Record the
+		// collision for audit but leave the original block untouched: the
+		// conflict path must be atomic so the surviving reservation and the
+		// already-staged chunks remain usable for commit.
 		s.conflicts[operation] = append(s.conflicts[operation], cloneChunk(existing), cloneChunk(chunk))
-		chunks[chunk.Index] = cloneChunk(chunk)
 		return model.ErrConflict
 	}
 	chunks[chunk.Index] = cloneChunk(chunk)
@@ -77,6 +80,25 @@ func (s *Store) ReleaseDigest(operation, digest string) {
 	if s.reservations[digest] == operation {
 		delete(s.reservations, digest)
 	}
+}
+
+// ReleaseDigestIfUnused releases the reservation for digest held by operation
+// only when no staged chunk belonging to that operation still references the
+// digest. This keeps the rollback of a rejected StageChunk atomic: a digest
+// shared with a surviving staged chunk keeps its reservation, while a digest
+// that belonged solely to the rejected chunk is rolled back.
+func (s *Store) ReleaseDigestIfUnused(operation, digest string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.reservations[digest] != operation {
+		return
+	}
+	for _, chunk := range s.staged[operation] {
+		if chunk.Digest == digest {
+			return
+		}
+	}
+	delete(s.reservations, digest)
 }
 
 func (s *Store) ForgetOperation(operation string) {
