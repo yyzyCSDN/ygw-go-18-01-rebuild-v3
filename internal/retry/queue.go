@@ -69,6 +69,13 @@ func (q *Queue) Complete(task model.RetryTask) {
 func (q *Queue) RescheduleAfterFailure(task model.RetryTask, due time.Time) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	// A generation cancelled while the worker was still inside the sender
+	// must not be revived by the late failure result. This mirrors the
+	// cancellation guard in Schedule and keeps the cancelled generation
+	// isolated from out-of-order failure outcomes.
+	if generation := q.cancelled[task.SnapshotID]; generation >= task.Generation {
+		return model.ErrCancelled
+	}
 	task.Attempt++
 	task.DueAt = due
 	q.history[task.SnapshotID] = append(q.history[task.SnapshotID], task)

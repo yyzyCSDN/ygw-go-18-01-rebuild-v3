@@ -39,8 +39,9 @@ func (s *Service) retryAfterFailure(task model.RetryTask, delay time.Duration) e
 	if delay < 0 {
 		nextDue = s.clock.Now()
 	}
-	if err := s.retries.RescheduleAfterFailure(task, nextDue); err != nil {
-		return nil
-	}
-	return nil
+	// Propagate the reschedule outcome so a generation cancelled while the
+	// sender was in flight surfaces as ErrCancelled rather than being masked
+	// as a successful retry (which would let the caller treat a dead task as
+	// live). The queue itself rejects the revive under its cancellation guard.
+	return s.retries.RescheduleAfterFailure(task, nextDue)
 }
