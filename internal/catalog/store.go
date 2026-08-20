@@ -137,27 +137,19 @@ func (s *Store) RemoveRestoreReference(planID, snapshotID string) {
 func (s *Store) ExpireUnprotected(keep int) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	orderedIDs := make([]string, 0, len(s.snapshots))
-	for id := range s.snapshots {
-		orderedIDs = append(orderedIDs, id)
+	all := make([]model.Snapshot, 0, len(s.snapshots))
+	for _, snapshot := range s.snapshots {
+		all = append(all, snapshot)
 	}
-	sort.Slice(orderedIDs, func(i, j int) bool {
-		left := s.snapshots[orderedIDs[i]]
-		right := s.snapshots[orderedIDs[j]]
-		if left.CreatedAt.Equal(right.CreatedAt) {
-			return left.ID < right.ID
-		}
-		return left.CreatedAt.After(right.CreatedAt)
-	})
+	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
 	expired := make([]string, 0)
-	for index, id := range orderedIDs {
-		if index < keep {
+	for index, snapshot := range all {
+		if index < keep || len(s.restoreRefs[snapshot.ID]) > 0 {
 			continue
 		}
-		snapshot := s.snapshots[id]
 		snapshot.State = model.SnapshotExpired
-		s.snapshots[id] = snapshot
-		expired = append(expired, id)
+		s.snapshots[snapshot.ID] = snapshot
+		expired = append(expired, snapshot.ID)
 	}
 	sort.Strings(expired)
 	return expired

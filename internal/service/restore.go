@@ -24,6 +24,7 @@ func (s *Service) BeginRestore(snapshotID, owner string, ttl time.Duration) (mod
 		_ = s.leases.Release(resource, owner, lease.Epoch)
 		return model.RestorePlan{}, err
 	}
+	s.catalog.AddRestoreReference(plan.ID, snapshotID)
 	return plan, nil
 }
 
@@ -44,6 +45,7 @@ func (s *Service) FinishRestore(plan model.RestorePlan, owner string) error {
 	if err := s.leases.Release(resource, owner, active.Epoch); err != nil {
 		return err
 	}
+	s.catalog.RemoveRestoreReference(plan.ID, plan.SnapshotID)
 	return nil
 }
 
