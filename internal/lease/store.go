@@ -24,17 +24,8 @@ func (s *Store) Acquire(resource, owner string, now time.Time, ttl time.Duration
 	if exists && !current.Released && now.Before(current.Deadline) {
 		return model.Lease{}, model.ErrLeaseHeld
 	}
-	epoch := s.epochs[resource]
-	if epoch == 0 {
-		epoch = 1
-		s.epochs[resource] = epoch
-	}
-	lease := model.Lease{
-		Resource: resource,
-		Owner:    owner,
-		Epoch:    epoch,
-		Deadline: now.Add(ttl),
-	}
+	s.epochs[resource]++
+	lease := model.Lease{Resource: resource, Owner: owner, Epoch: s.epochs[resource], Deadline: now.Add(ttl)}
 	s.leases[resource] = lease
 	return lease, nil
 }
@@ -43,13 +34,7 @@ func (s *Store) Validate(resource, owner string, epoch uint64, now time.Time) er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	lease, ok := s.leases[resource]
-	if !ok {
-		return model.ErrLeaseFenced
-	}
-	if lease.Released {
-		return model.ErrLeaseFenced
-	}
-	if !now.Before(lease.Deadline) {
+	if !ok || lease.Released || lease.Owner != owner || lease.Epoch != epoch || !now.Before(lease.Deadline) {
 		return model.ErrLeaseFenced
 	}
 	return nil

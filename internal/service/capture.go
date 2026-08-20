@@ -28,9 +28,8 @@ func (s *Service) BeginCapture(ctx context.Context, snapshotID, owner string, tt
 }
 
 func (s *Service) StageChunk(handle model.CaptureHandle, index int, data []byte) error {
-	resource := "capture:" + handle.SnapshotID
-	if _, ok := s.leases.Lease(resource); !ok {
-		return model.ErrNotFound
+	if err := s.leases.Validate("capture:"+handle.SnapshotID, handle.Owner, handle.LeaseEpoch, s.clock.Now()); err != nil {
+		return err
 	}
 	sum := sha256.Sum256(data)
 	digest := hex.EncodeToString(sum[:])
@@ -46,6 +45,9 @@ func (s *Service) StageChunk(handle model.CaptureHandle, index int, data []byte)
 }
 
 func (s *Service) CommitCapture(handle model.CaptureHandle, baseID string, full bool, metadata map[string]string) (model.Snapshot, error) {
+	started := s.clock.Now()
+	succeeded := false
+	defer func() { s.telemetry.Observe("capture.commit", handle.SnapshotID, started, succeeded, s.clock.Now()) }()
 	resource := "capture:" + handle.SnapshotID
 	if err := s.leases.Validate(resource, handle.Owner, handle.LeaseEpoch, s.clock.Now()); err != nil {
 		return model.Snapshot{}, err
@@ -71,6 +73,7 @@ func (s *Service) CommitCapture(handle model.CaptureHandle, baseID string, full 
 		return model.Snapshot{}, err
 	}
 	committed, _ := s.catalog.Snapshot(handle.SnapshotID)
+	succeeded = true
 	return committed, nil
 }
 
