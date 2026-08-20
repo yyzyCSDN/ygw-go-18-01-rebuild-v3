@@ -74,6 +74,11 @@ func (l *Log) Open() {
 	l.closed = false
 }
 
+// LatestByOperation reduces entries to the latest one per operation. "Latest"
+// is fenced by generation first: an entry from an older generation never
+// supersedes one from a newer generation, regardless of sequence. Within the
+// same generation the higher sequence wins. This prevents a stale generation
+// that happens to carry a larger sequence from overwriting newer state.
 func LatestByOperation(entries []Entry) []Entry {
 	latest := make(map[string]Entry)
 	order := make([]string, 0)
@@ -82,7 +87,7 @@ func LatestByOperation(entries []Entry) []Entry {
 		if !exists {
 			order = append(order, entry.Operation)
 		}
-		latest[entry.Operation] = preferSequence(current, entry, exists)
+		latest[entry.Operation] = preferLatest(current, entry, exists)
 	}
 	result := make([]Entry, 0, len(order))
 	for _, operation := range order {
@@ -91,11 +96,21 @@ func LatestByOperation(entries []Entry) []Entry {
 	return result
 }
 
-func preferSequence(current, candidate Entry, exists bool) Entry {
-	if !exists || candidate.Sequence >= current.Sequence {
+func preferLatest(current, candidate Entry, exists bool) Entry {
+	if !exists {
 		return candidate
 	}
-	return current
+	switch {
+	case candidate.Generation > current.Generation:
+		return candidate
+	case candidate.Generation < current.Generation:
+		return current
+	default:
+		if candidate.Sequence >= current.Sequence {
+			return candidate
+		}
+		return current
+	}
 }
 
 func OperationSequence(entries []Entry) map[string]uint64 {

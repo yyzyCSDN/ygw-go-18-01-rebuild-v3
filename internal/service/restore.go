@@ -79,6 +79,13 @@ func (s *Service) Replay(entries []journal.Entry) error {
 }
 
 func (s *Service) applyReplayEntry(entry journal.Entry) error {
+	current := s.replayGenerations[entry.Operation]
+	if entry.Generation < current {
+		// Generation fence: a stale generation must not overwrite state
+		// established by a newer one, even if its sequence is larger. This also
+		// protects batched replays where a later batch carries an old event.
+		return nil
+	}
 	s.replayGenerations[entry.Operation] = entry.Generation
 	if entry.Kind != "verify" {
 		return nil

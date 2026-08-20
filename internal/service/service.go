@@ -74,6 +74,16 @@ func (s *Service) RetryPending(snapshotID string) int { return s.retries.Pending
 
 func (s *Service) JournalEntries() []journal.Entry { return s.journal.Entries() }
 
+// ReplayGeneration reports the highest generation replayed for an operation,
+// the fence below which stale entries are ignored. Returns false when no entry
+// for the operation has been replayed yet.
+func (s *Service) ReplayGeneration(operation string) (uint64, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	gen, ok := s.replayGenerations[operation]
+	return gen, ok
+}
+
 func (s *Service) Lease(resource string) (model.Lease, bool) { return s.leases.Lease(resource) }
 
 func (s *Service) MaterializeManifest(snapshotID string) (manifest.Envelope, error) {
