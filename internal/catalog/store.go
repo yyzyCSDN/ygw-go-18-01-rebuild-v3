@@ -11,7 +11,6 @@ type Store struct {
 	mu            sync.RWMutex
 	snapshots     map[string]model.Snapshot
 	staged        map[string]map[int]model.Chunk
-	conflicts     map[string][]model.Chunk
 	reservations  map[string]string
 	restoreRefs   map[string]map[string]struct{}
 	maxChunkCount int
@@ -21,7 +20,7 @@ func New(maxChunkCount int) *Store {
 	if maxChunkCount < 1 {
 		maxChunkCount = 64
 	}
-	return &Store{snapshots: make(map[string]model.Snapshot), staged: make(map[string]map[int]model.Chunk), conflicts: make(map[string][]model.Chunk), reservations: make(map[string]string), restoreRefs: make(map[string]map[string]struct{}), maxChunkCount: maxChunkCount}
+	return &Store{snapshots: make(map[string]model.Snapshot), staged: make(map[string]map[int]model.Chunk), reservations: make(map[string]string), restoreRefs: make(map[string]map[string]struct{}), maxChunkCount: maxChunkCount}
 }
 
 func (s *Store) ReserveDigest(operation, digest string) error {
@@ -46,29 +45,10 @@ func (s *Store) StageChunk(operation string, chunk model.Chunk) error {
 		return model.ErrCapacity
 	}
 	if existing, exists := chunks[chunk.Index]; exists && existing.Digest != chunk.Digest {
-		s.conflicts[operation] = append(s.conflicts[operation], cloneChunk(existing), cloneChunk(chunk))
-		chunks[chunk.Index] = cloneChunk(chunk)
 		return model.ErrConflict
 	}
 	chunks[chunk.Index] = cloneChunk(chunk)
 	return nil
-}
-
-func (s *Store) ConflictHistory(operation string) []model.Chunk {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	values := s.conflicts[operation]
-	result := make([]model.Chunk, len(values))
-	for index, value := range values {
-		result[index] = cloneChunk(value)
-	}
-	return result
-}
-
-func (s *Store) ConflictCount(operation string) int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return len(s.conflicts[operation]) / 2
 }
 
 func (s *Store) ReleaseDigest(operation, digest string) {

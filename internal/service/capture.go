@@ -38,13 +38,16 @@ func (s *Service) StageChunk(handle model.CaptureHandle, index int, data []byte)
 	}
 	chunk := model.Chunk{Index: index, Digest: digest, Data: append([]byte(nil), data...)}
 	if err := s.catalog.StageChunk(handle.Operation, chunk); err != nil {
-		s.catalog.ForgetOperation(handle.Operation)
+		s.catalog.ReleaseDigest(handle.Operation, digest)
 		return err
 	}
 	return nil
 }
 
 func (s *Service) CommitCapture(handle model.CaptureHandle, baseID string, full bool, metadata map[string]string) (model.Snapshot, error) {
+	started := s.clock.Now()
+	succeeded := false
+	defer func() { s.telemetry.Observe("capture.commit", handle.SnapshotID, started, succeeded, s.clock.Now()) }()
 	resource := "capture:" + handle.SnapshotID
 	if err := s.leases.Validate(resource, handle.Owner, handle.LeaseEpoch, s.clock.Now()); err != nil {
 		return model.Snapshot{}, err
@@ -70,6 +73,7 @@ func (s *Service) CommitCapture(handle model.CaptureHandle, baseID string, full 
 		return model.Snapshot{}, err
 	}
 	committed, _ := s.catalog.Snapshot(handle.SnapshotID)
+	succeeded = true
 	return committed, nil
 }
 
