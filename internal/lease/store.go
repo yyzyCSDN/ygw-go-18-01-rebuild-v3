@@ -24,11 +24,12 @@ func (s *Store) Acquire(resource, owner string, now time.Time, ttl time.Duration
 	if exists && !current.Released && now.Before(current.Deadline) {
 		return model.Lease{}, model.ErrLeaseHeld
 	}
-	epoch := s.epochs[resource]
-	if epoch == 0 {
-		epoch = 1
-		s.epochs[resource] = epoch
-	}
+	// Every successful (re)acquisition advances the epoch, even when the owner
+	// is unchanged. A re-acquired lease therefore carries a strictly greater
+	// epoch than the one stamped on any handle from the superseded capture
+	// round, so late operations presented with the old epoch are fenced.
+	epoch := s.epochs[resource] + 1
+	s.epochs[resource] = epoch
 	lease := model.Lease{
 		Resource: resource,
 		Owner:    owner,
@@ -47,6 +48,12 @@ func (s *Store) Validate(resource, owner string, epoch uint64, now time.Time) er
 		return model.ErrLeaseFenced
 	}
 	if lease.Released {
+		return model.ErrLeaseFenced
+	}
+	// The caller must present the owner and epoch of the currently held
+	// lease. A handle carrying a superseded epoch (or a different owner) is
+	// fenced regardless of whether the lease deadline has lapsed.
+	if lease.Owner != owner || lease.Epoch != epoch {
 		return model.ErrLeaseFenced
 	}
 	if !now.Before(lease.Deadline) {

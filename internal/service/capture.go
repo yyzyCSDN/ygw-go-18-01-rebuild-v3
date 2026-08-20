@@ -29,8 +29,12 @@ func (s *Service) BeginCapture(ctx context.Context, snapshotID, owner string, tt
 
 func (s *Service) StageChunk(handle model.CaptureHandle, index int, data []byte) error {
 	resource := "capture:" + handle.SnapshotID
-	if _, ok := s.leases.Lease(resource); !ok {
-		return model.ErrNotFound
+	// Fence late operations from a superseded capture round. Validate checks
+	// existence, release, deadline, owner, and epoch, so a handle whose epoch
+	// predates the currently held lease (e.g. after a re-acquire on the same
+	// snapshot) is rejected with ErrLeaseFenced rather than written.
+	if err := s.leases.Validate(resource, handle.Owner, handle.LeaseEpoch, s.clock.Now()); err != nil {
+		return err
 	}
 	sum := sha256.Sum256(data)
 	digest := hex.EncodeToString(sum[:])
