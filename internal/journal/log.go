@@ -82,38 +82,13 @@ func LatestByOperation(entries []Entry) []Entry {
 		if !exists {
 			order = append(order, entry.Operation)
 		}
-		latest[entry.Operation] = preferSequence(current, entry, exists)
+		if !exists || entry.Generation > current.Generation || entry.Generation == current.Generation && entry.Sequence > current.Sequence {
+			latest[entry.Operation] = entry
+		}
 	}
 	result := make([]Entry, 0, len(order))
 	for _, operation := range order {
 		result = append(result, latest[operation])
-	}
-	return result
-}
-
-func preferSequence(current, candidate Entry, exists bool) Entry {
-	if !exists || candidate.Sequence >= current.Sequence {
-		return candidate
-	}
-	return current
-}
-
-func OperationSequence(entries []Entry) map[string]uint64 {
-	result := make(map[string]uint64)
-	for _, entry := range entries {
-		if entry.Sequence > result[entry.Operation] {
-			result[entry.Operation] = entry.Sequence
-		}
-	}
-	return result
-}
-
-func EntriesAtOrBefore(entries []Entry, sequence uint64) []Entry {
-	result := make([]Entry, 0, len(entries))
-	for _, entry := range entries {
-		if entry.Sequence <= sequence {
-			result = append(result, entry)
-		}
 	}
 	return result
 }

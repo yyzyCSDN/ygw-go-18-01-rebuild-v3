@@ -71,21 +71,15 @@ func (s *Service) Replay(entries []journal.Entry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, entry := range journal.LatestByOperation(entries) {
-		if err := s.applyReplayEntry(entry); err != nil {
-			return err
+		if entry.Generation <= s.replayGenerations[entry.Operation] {
+			continue
+		}
+		s.replayGenerations[entry.Operation] = entry.Generation
+		if entry.Kind == "verify" {
+			if err := s.catalog.SetState(entry.SnapshotID, entry.Generation, model.SnapshotVerified); err != nil && err != model.ErrNotFound {
+				return err
+			}
 		}
 	}
 	return nil
-}
-
-func (s *Service) applyReplayEntry(entry journal.Entry) error {
-	s.replayGenerations[entry.Operation] = entry.Generation
-	if entry.Kind != "verify" {
-		return nil
-	}
-	err := s.catalog.SetState(entry.SnapshotID, entry.Generation, model.SnapshotVerified)
-	if err == model.ErrNotFound {
-		return nil
-	}
-	return err
 }
