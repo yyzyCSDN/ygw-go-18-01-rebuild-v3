@@ -1,0 +1,13 @@
+.git
+.git/**
+.claude
+.claude/**
+*.jsonl
+*.log
+*.zip
+evidence/
+outputs/
+node_modules/
+dist/
+bin/
+tmp/
