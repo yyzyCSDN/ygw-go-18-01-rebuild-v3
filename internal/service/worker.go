@@ -28,19 +28,8 @@ func (s *Service) RunRetry(ctx context.Context, sender Sender, delay time.Durati
 	}
 	task := due[0]
 	if err := sender(ctx, task); err != nil {
-		return s.retryAfterFailure(task, delay)
+		return s.retries.RescheduleAfterFailure(task, s.clock.Now().Add(delay))
 	}
 	s.retries.Complete(task)
-	return nil
-}
-
-func (s *Service) retryAfterFailure(task model.RetryTask, delay time.Duration) error {
-	nextDue := s.clock.Now().Add(delay)
-	if delay < 0 {
-		nextDue = s.clock.Now()
-	}
-	if err := s.retries.RescheduleAfterFailure(task, nextDue); err != nil {
-		return nil
-	}
 	return nil
 }

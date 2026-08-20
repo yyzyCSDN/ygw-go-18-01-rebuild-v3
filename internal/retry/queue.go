@@ -12,11 +12,10 @@ type Queue struct {
 	mu        sync.Mutex
 	tasks     map[string]model.RetryTask
 	cancelled map[string]uint64
-	history   map[string][]model.RetryTask
 }
 
 func New() *Queue {
-	return &Queue{tasks: make(map[string]model.RetryTask), cancelled: make(map[string]uint64), history: make(map[string][]model.RetryTask)}
+	return &Queue{tasks: make(map[string]model.RetryTask), cancelled: make(map[string]uint64)}
 }
 
 func (q *Queue) Schedule(task model.RetryTask) error {
@@ -69,20 +68,14 @@ func (q *Queue) Complete(task model.RetryTask) {
 func (q *Queue) RescheduleAfterFailure(task model.RetryTask, due time.Time) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if q.cancelled[task.SnapshotID] >= task.Generation {
+		delete(q.tasks, task.ID)
+		return model.ErrCancelled
+	}
 	task.Attempt++
 	task.DueAt = due
-	q.history[task.SnapshotID] = append(q.history[task.SnapshotID], task)
 	q.tasks[task.ID] = task
 	return nil
-}
-
-func (q *Queue) History(snapshotID string) []model.RetryTask {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	values := q.history[snapshotID]
-	result := make([]model.RetryTask, len(values))
-	copy(result, values)
-	return result
 }
 
 func (q *Queue) Pending(snapshotID string) int {
